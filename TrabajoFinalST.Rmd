@@ -113,3 +113,38 @@ lines(tiempo.train, tendencia.train, col="blue")
 lines(tiempo.pred, tendencia.pred, col="green")
 ```
 
+Para validar que el modelo es correcto, dado que no se puede afirmar con la gráfica que hemos obtenido, utilizaremos el test de Jarque Bera sobre los residuos que han quedado de generar el modelo lineal.
+
+```{r}
+JB.train = jarque.bera.test(parametros.lm$residuals)
+JB.train
+```
+
+El test de Jarque Bera da un p-value de 0.18, que está por encima de 0.05. Por este motivo, no tenemos suficiente confianza como para afirmar que los residuos no sigan una distribución normal, y por tanto asumimos que sí que la siguen.
+
+El siguiente paso es eliminar la tendencia a la serie. Comprobaremos en una gráfica qué aspecto tiene una vez eliminada esa tendencia.
+
+```{r}
+serie.train.sinTend = serie.train - tendencia.train
+plot.ts(serie.train.sinTend, xlim=c(1, tiempo.train[length(tiempo.train)]))
+```
+
+Se puede observar que la gráfica tiene el mismo aspecto, solamente se ha trasladado en el eje Y, ubicándose ahora en torno al 0.
+
+El siguiente paso es eliminar la estacionalidad del modelo. Inicialmente supusimos una estacionalidad de frecuencia 12 (anual).
+
+```{r}
+k = 12
+estacionalidad = decompose(serie.ts.log)$seasonal[1:k]
+estacionalidad
+```
+
+Aquí vemos los 12 valores que componen la estacionalidad de la serie. Para eliminar la estacionalidad hay que restar estos valores de forma periódica a lo largo de la serie.
+
+```{r}
+# Aprovecho el reciclaje de R para no tener que crear una variable auxiliar
+serie.train.sinTendSinEst = serie.train.sinTend - estacionalidad
+
+plot.ts(serie.train.sinTendSinEst, xlim=c(1, tiempo.train[length(tiempo.train)]))
+```
+
