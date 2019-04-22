@@ -60,8 +60,56 @@ datosEstacion$Fecha = as.Date(datosEstacion$Fecha)
 # Convertimos el dataset en dos columnas (Fecha y Mes),
 # agrupamos por mes y año y para todos los valores nos
 # quedamos con el valor máximo de TMax
-datosEstacion %>%
+datosTmax = datosEstacion %>%
 mutate(Mes = format(Fecha, "%m"), Año = format(Fecha, "%Y")) %>%
 group_by(Año, Mes) %>%
 summarise(Tmax = max(Tmax))
 ```
+
+Ahora podemos trabajar con la columna TMax como nuestra serie temporal. Podemos crear el objeto "Serie Temporal" con la librería `tseries`. Usando `plot` y `decompose` se pueden echar un vistazo general al aspecto de nuestros datos. Incluimos un valor de `frequency` de 12 porque es lo que estimamos que es el periodo de la estacionalidad (de año en año y tenemos valores mensuales).
+
+```{r}
+# Observamos la tendencia y estacionalidad con el decompose
+# y utilizamos frecuencia 12 porque asumimos que tienen
+# estacionalidad anual
+serie = datosTmax$Tmax
+serie.ts = ts(serie, frequency=12)
+plot(decompose(serie.ts))
+```
+
+Buscando que la serie sea estacionaria, implicando eso que no varíe ni en media ni en varianza, vamos a realizar una transformación logarítmica para conseguir suavizar los valores.
+
+```{r}
+# Realizamos una transformación logarítmica
+# y volvemos a mostrar los valores del decompose
+serie.ts.log = log(serie.ts)
+serie.log = log(serie)
+plot(decompose(serie.ts.log))
+```
+
+Ya podemos empezar a trabajar con los datos. Como primer paso, vamos a asumir que todo el conjunto de train es el total de datos que tenemos y que la predicción a realizar estará compuesta por 2 valores (marzo y abril de 2018).
+
+```{r}
+nPred = 2
+serie.train = serie.log
+tiempo.train = 1:length(serie.train)
+tiempo.pred = (length(tiempo.train)+1):(length(tiempo.train)+nPred)
+```
+
+A continuación tenemos que estimar la tendencia. Vamos a utilizar un modelo lineal simple dado que basándonos en la gráfica puede generalizar aceptablemente. Construimos el modelo lineal con la función `lm`.
+
+```{r}
+parametros.lm = lm(serie.train ~ tiempo.train)
+
+tendencia.train = parametros.lm$coefficients[1]+tiempo.train*parametros.lm$coefficients[2]
+tendencia.pred = parametros.lm$coefficients[1]+tiempo.pred*parametros.lm$coefficients[2]
+```
+
+En la siguiente gráfica mostramos la tendencia estimada en la misma gráfica que la serie temporal.
+
+```{r}
+plot.ts(serie.train, xlim=c(1, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.train, tendencia.train, col="blue")
+lines(tiempo.pred, tendencia.pred, col="green")
+```
+
