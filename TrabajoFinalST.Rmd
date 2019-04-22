@@ -1,0 +1,67 @@
+---
+title: 'Series Temporales: Trabajo Final'
+author: "Juanjo Sierra"
+date: "22 de abril de 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Paquetes a cargar
+
+Importamos los paquetes que necesitamos para resolver los problemas planteados para la práctica.
+
+```{r}
+library(tseries)
+library(dplyr)
+```
+
+## Problema 1
+
+Teniendo los datos de una estación meteorológica (ubicada en Loja) desde mayo de 2013 hasta febrero de 2018, se pide predecir los valores de temperatura máxima mensuales para los meses de marzo y abril de 2018.
+
+En primer lugar, se leen los datos de la estación meteorológica escogida.
+
+```{r}
+datosEstacion = read.csv("5582A.csv", sep = ";")
+summary(datosEstacion)
+```
+
+Como solamente vamos a trabajar con la temperatura máxima y necesitamos agruparlas por fecha, nos quedamos únicamente con esas dos columnas.
+
+```{r}
+# Nos quedamos con los valores de fecha y temperatura máxima
+datosEstacion = datosEstacion[,2:3]
+head(datosEstacion)
+```
+
+Como hemos comprobado antes en el summary que sí que hay valores perdidos (122), vamos a eliminar las instancias en las que haya un NA para poder calcular correctamente cuál es la temperatura máxima en cada mes.
+
+```{r}
+# Elimino aquellos datos que sean NA
+datosEstacion = datosEstacion[-which(is.na(datosEstacion$Tmax)),]
+
+# Comprobamos la nueva dimensionalidad de los datos
+# y confirmamos que ya no hay datos perdidos
+dim(datosEstacion)
+anyNA(datosEstacion)
+```
+
+Hemos reducido la dimensionalidad de los datos de 1726 a 1604, pero ya no hay ningún valor perdido y podemos agrupar los datos por mes, obteniendo la temperatura máxima en cada uno.
+
+Para obtener dichos datos máximos utilizo la librería `dplyr`.
+
+```{r}
+# Almacenamos la variable Fecha como tipo Date
+datosEstacion$Fecha = as.Date(datosEstacion$Fecha)
+
+# Convertimos el dataset en dos columnas (Fecha y Mes),
+# agrupamos por mes y año y para todos los valores nos
+# quedamos con el valor máximo de TMax
+datosEstacion %>%
+mutate(Mes = format(Fecha, "%m"), Año = format(Fecha, "%Y")) %>%
+group_by(Año, Mes) %>%
+summarise(Tmax = max(Tmax))
+```
