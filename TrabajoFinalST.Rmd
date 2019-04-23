@@ -148,3 +148,119 @@ serie.train.sinTendSinEst = serie.train.sinTend - estacionalidad
 plot.ts(serie.train.sinTendSinEst, xlim=c(1, tiempo.train[length(tiempo.train)]))
 ```
 
+Esta serie ya no tiene tendencia ni estacionalidad, como íbamos buscando. Ahora queremos comprobar si es estacionaria. Para ello podemos comenzar por realizar un test ACF.
+
+```{r}
+acf(serie.train.sinTendSinEst)
+```
+
+En la gráfica podemos observar que los valores descienden muy rápido y continúan por la serie siguiendo un formato de "olas", por lo que tiene toda la pinta de ser un modelo autorregresivo. Para asegurar que se trata de una serie estacionaria vamos a realizar el test de Dickey-Fuller.
+
+```{r}
+adf.serie.train = adf.test(serie.train.sinTendSinEst)
+adf.serie.train
+```
+
+Según los resultados del test de Dickey-Fuller, tenemos una confianza de en torno al 98% de que la serie sea estacionaria. Debido a que hemos observado este comportamiento de "olas" en el test ACF podemos sugerir que se trata de un modelo autorregresivo, pero podemos comprobar en un test PACF si también puede tratarse de un modelo de medias móviles.
+
+```{r}
+pacf(serie.train.sinTendSinEst)
+```
+
+En esta gráfica se intuye un comportamiento similar pero sin embargo los valores más lejanos al 0 se encuentran muy próximos al umbral y no se produce un descenso tan rápido y tan grande en estos valores. Por lo tanto, propongo generar un modelo autorregresivo de grado 0 (el último instante de tiempo en el que el PACF pasa del umbral) y sin diferenciación.
+
+```{r}
+modelo = arima(serie.train.sinTendSinEst, order = c(0,0,0))
+```
+
+Una vez construido el modelo podemos generar las predicciones para los valores que buscamos (los 2 siguientes, marzo y abril).
+
+```{r}
+predicciones = predict(modelo, n.ahead = nPred)
+valoresPredichos = predicciones$pred
+valoresPredichos
+```
+
+Podemos observar los valores predichos con el resto de los valores de la serie transformada.
+
+```{r}
+plot.ts(serie.train.sinTendSinEst, xlim=c(1, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.pred, valoresPredichos, col="red")
+```
+
+Se aprecia que al menos los valores siguen la tendencia que parecía intuirse de los últimos valores (hay un pico que está decayendo en los últimos meses).
+
+Para comprobar que este modelo sea válido vamos a aplicar el test de Box-Pierce para comprobar que los residuos que quedan del modelo siguen una distribución aleatoria.
+
+```{r}
+boxPierce.test = Box.test(modelo$residuals)
+boxPierce.test
+```
+
+Según el p-value que refleja el test de Box-Pierce los residuos no siguen una distribución aleatoria, es decir, hay al menos una parte de la serie que se puede modelar mediante algo que no sea aleatorio. Por este motivo vamos a volver a las gráficas ACF y PACF y vamos a comprobar que, de considerar un modelo de medias móviles en lugar de uno autorregresivo, podríamos generar un modelo ARIMA(0,0,1). Probemos si con este modelo las predicciones y los residuos que nos quedan se adaptan a lo que buscamos.
+
+```{r}
+modelo = arima(serie.train.sinTendSinEst, order = c(0,0,1))
+
+predicciones = predict(modelo, n.ahead = nPred)
+valoresPredichos = predicciones$pred
+valoresPredichos
+
+plot.ts(serie.train.sinTendSinEst, xlim=c(1, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.pred, valoresPredichos, col="red")
+```
+
+A primera vista esta aproximación también podría encajar. Vamos a probar el test de Box-Pierce.
+
+```{r}
+boxPierce.test = Box.test(modelo$residuals)
+boxPierce.test
+```
+
+Este test ya sí nos asegura que los residuos son aleatorios, por lo que el modelo se adapta mejor a la serie. Con los tests de Jarque Bera y Shapiro-Wilk probamos si los residuos siguen una distribución normal.
+
+```{r}
+jarqueBera.test = jarque.bera.test(modelo$residuals)
+jarqueBera.test
+
+shapiroWilk.test = shapiro.test(modelo$residuals)
+shapiroWilk.test
+```
+
+Los p-values tan altos que dan estos tests no dan lugar a pensar que los residuos puedan seguir una distribución no normal. Por tanto, estos residuos también se ajustan a lo que buscamos y podemos asumir que el modelo es bueno. Podemos mostrar un histograma con la distribución de los residuos para verlo gráficamente. 
+
+```{r}
+hist(modelo$residuals, col="blue", prob=TRUE, ylim=c(0,5), xlim=c(-0.5,0.5))
+lines(density(modelo$residuals))
+```
+
+Para obtener los datos finales de temperatura hay que deshacer sobre los datos predichos las transformaciones que hemos realizado antes.
+
+```{r}
+# Sumamos estacionalidad
+# De nuevo aprovecho el reciclaje de R
+# Como el vector de estacionalidad empieza en mayo
+# hay que especificar que el valor que sumamos es el que
+# le corresponde a marzo y abril
+valoresPredichos.Est = valoresPredichos + estacionalidad[11:12]
+
+# Sumamos tendencia
+valoresPredichos.EstTend = valoresPredichos.Est + tendencia.pred
+
+# Deshacemos transformación logarítmica
+valoresPredichos.EstTendExp = exp(valoresPredichos.EstTend)
+```
+
+Por último, mostramos los datos predichos junto a los que hemos utilizado para entrenar, de forma que continúen la serie.
+
+```{r}
+plot.ts(serie, xlim=c(1, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.pred, valoresPredichos.EstTendExp, col="red")
+```
+
+Los valores finales predichos por el modelo para los meses de marzo y abril son los siguientes.
+
+```{r}
+valoresPredichos.EstTendExp
+```
+
