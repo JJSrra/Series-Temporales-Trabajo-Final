@@ -399,7 +399,7 @@ adf.test(serie.train.SinEst)
 Según el resultado arrojado por el test, el p-value bajo refleja una confianza alta en que la serie es estacionaria, por tanto se puede tratar de generar un modelo ARIMA. Al ser PACF el que parece que sigue una forma más de "olas", vamos a asumir que se trate de un modelo de medias móviles, cuyo grado podría ser cuestionable dado que todos los valores del test ACF se encuentran por encima del umbral. Voy a escoger el orden 3 porque es el último valor que se encuentra rondando el 0.5.
 
 ```{r}
-modelo = arima(serie.train.SinEst, order = c(0,0,11))
+modelo = arima(serie.train.SinEst, order = c(0,0,3))
 ```
 
 Una vez construido el modelo podemos generar las predicciones para los valores que buscamos (la primera semana de marzo).
@@ -407,7 +407,6 @@ Una vez construido el modelo podemos generar las predicciones para los valores q
 ```{r}
 predicciones = predict(modelo, n.ahead = nPred)
 valoresPredichos = predicciones$pred
-valoresPredichos
 ```
 
 Podemos observar los valores predichos con el resto de los valores de la serie transformada. Voy a mostrar sólo los últimos datos para que se aprecien bien los valores calculados.
@@ -424,6 +423,21 @@ boxPierce.test = Box.test(modelo$residuals)
 boxPierce.test
 ```
 
+El p-value del test de Box-Pierce nos hace pensar que los residuos no son aleatorios, por lo que hay una parte de la serie que se puede modelar de una forma mejor que el azar. Por ello, debido al amplio rango de datos que hay por encima del umbral para la gráfica de ACF, vamos a probar un nuevo modelo de medias móviles de rango mayor, en este caso de rango 5.
+
+```{r}
+modelo = arima(serie.train.SinEst, order = c(0,0,5))
+
+predicciones = predict(modelo, n.ahead = nPred)
+valoresPredichos = predicciones$pred
+
+plot.ts(serie.train.SinEst, xlim=c(1500, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.pred, valoresPredichos, col="red")
+
+boxPierce.test = Box.test(modelo$residuals)
+boxPierce.test
+```
+
 Este test ya sí nos asegura que los residuos son aleatorios, por lo que el modelo se adapta mejor a la serie. Con los tests de Jarque Bera y Shapiro-Wilk probamos si los residuos siguen una distribución normal.
 
 ```{r}
@@ -433,3 +447,39 @@ jarqueBera.test
 shapiroWilk.test = shapiro.test(modelo$residuals)
 shapiroWilk.test
 ```
+
+Los tests de Jarque Bera y Shapiro-Wilk sin embargo dicen que los residuos no siguen una distribución normal. Aún así, si observamos su distribución en una gráfica mediante un histograma, podemos comprobar que se parece bastante.
+
+```{r}
+hist(modelo$residuals, col="blue", prob=TRUE, ylim=c(0,5), xlim=c(-0.6,0.6))
+lines(density(modelo$residuals))
+```
+
+Basándonos en esto y habiendo comprobado varias configuraciones de modelos ARIMA sin variar los resultados de este test, vamos a utilizar este modelo ARIMA8(0,0,5) para predecir los datos. A continuación hay que deshacer los cambios, que en este caso es simplemente sumar la estacionalidad y quitar la transformación logarítimca.
+
+Como la serie comienza el 7 de mayo, para obtener la estacionalidad de los datos del 1 de marzo hay que restar al total de la estacionalidad de 365 los 7 días de mayo que ya hay, los 30 días de abril y los 31 días de marzo. Esto indica que la estacionalidad del 1 de marzo es el dato 297 del vector de estacionalidades, por lo que los 7 días de la semana a predecir ocuparían los puestos entre el 297 y el 303, incluidos.
+
+```{r}
+# Sumamos estacionalidad
+# Los datos de la primera semana de marzo se corresponden
+# a los valores 297:303 del vector de estacionalidades
+# de acuerdo a los cálculos anteriormente indicados
+valoresPredichos.Est = valoresPredichos + estacionalidad[297:303]
+
+# Deshacemos transformación logarítmica
+valoresPredichos.EstExp = exp(valoresPredichos.Est)
+```
+
+Por último, mostramos los datos predichos junto a los que hemos utilizado para entrenar, de forma que continúen la serie y podamos comprobar cómo se adaptan. De nuevo incluimos solamente los últimos 300 datos aprox para que se pueda apreciar la predicción.
+
+```{r}
+plot.ts(serie, xlim=c(1500, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.pred, valoresPredichos.EstExp, col="red")
+```
+
+Los valores predichos por el modelo han sido los siguientes.
+
+```{r}
+valoresPredichos.EstExp
+```
+
