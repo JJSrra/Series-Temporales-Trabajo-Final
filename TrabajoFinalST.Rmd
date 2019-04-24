@@ -365,5 +365,71 @@ JB.train = jarque.bera.test(parametros.lm$residuals)
 JB.train
 ```
 
-Como el test de Jarque Bera sigue negando que los residuos sigan una distribución normal no podemos asumir que el modelo estime la tendencia correctamente, y además al ser esta tendencia calculada casi constante, no voy a eliminar la tendencia para los siguientes pasos.
+Como el test de Jarque Bera sigue negando que los residuos sigan una distribución normal no podemos asumir que el modelo estime la tendencia correctamente, y además al ser esta tendencia calculada casi constante, no voy a eliminarla para los siguientes pasos.
 
+El siguiente paso es eliminar la estacionalidad. En este caso como hemos dicho anteriormente, se entiende una estacionalidad de frecuencia 365 (anual contando en días).
+
+```{r}
+k = 365
+estacionalidad = decompose(serie.ts.log)$seasonal[1:k]
+```
+
+Para restar esta estacionalidd hay que hacerlo de forma periódica a lo largo de toda la serie.
+
+```{r}
+# Aprovecho el reciclaje de R para no tener que crear una variable auxiliar
+serie.train.SinEst = serie.train - estacionalidad
+
+plot.ts(serie.train.SinEst, xlim=c(1, tiempo.train[length(tiempo.train)]))
+```
+
+Ahora que la serie ya no tiene estacionalidad y hemos analizado que no teníamos que restarle la tendencia, vamos a comprobar si es estacionaria. Para ello podemos probar en principio a ejecutar un test ACF y un PACF.
+
+```{r}
+acf(serie.train.SinEst)
+pacf(serie.train.SinEst)
+```
+
+En el gráfico del test PACF se puede observar un rápido descenso, pero no se distingue un claro comportamiento de "olas". Por otro lado, en la gráfica del test ACF ni siquiera desciende rápido y no se queda por debajo del 0, por lo que es un comportamiento extraño. Para comprobar estadísticamente si se trata de una serie estacionaria podemos ejecutar el test de Dickey-Fuller aumentado y obtener nuestras conclusiones a partir de ello.
+
+```{r}
+adf.test(serie.train.SinEst)
+```
+
+Según el resultado arrojado por el test, el p-value bajo refleja una confianza alta en que la serie es estacionaria, por tanto se puede tratar de generar un modelo ARIMA. Al ser PACF el que parece que sigue una forma más de "olas", vamos a asumir que se trate de un modelo de medias móviles, cuyo grado podría ser cuestionable dado que todos los valores del test ACF se encuentran por encima del umbral. Voy a escoger el orden 3 porque es el último valor que se encuentra rondando el 0.5.
+
+```{r}
+modelo = arima(serie.train.SinEst, order = c(0,0,11))
+```
+
+Una vez construido el modelo podemos generar las predicciones para los valores que buscamos (la primera semana de marzo).
+
+```{r}
+predicciones = predict(modelo, n.ahead = nPred)
+valoresPredichos = predicciones$pred
+valoresPredichos
+```
+
+Podemos observar los valores predichos con el resto de los valores de la serie transformada. Voy a mostrar sólo los últimos datos para que se aprecien bien los valores calculados.
+
+```{r}
+plot.ts(serie.train.SinEst, xlim=c(1500, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.pred, valoresPredichos, col="red")
+```
+
+Los datos parecen coherentes, pero vamos a aplicar el test de Box-Pierce para asegurarnos que los residuos resultantes del modelo sean aleatorios.
+
+```{r}
+boxPierce.test = Box.test(modelo$residuals)
+boxPierce.test
+```
+
+Este test ya sí nos asegura que los residuos son aleatorios, por lo que el modelo se adapta mejor a la serie. Con los tests de Jarque Bera y Shapiro-Wilk probamos si los residuos siguen una distribución normal.
+
+```{r}
+jarqueBera.test = jarque.bera.test(modelo$residuals)
+jarqueBera.test
+
+shapiroWilk.test = shapiro.test(modelo$residuals)
+shapiroWilk.test
+```
