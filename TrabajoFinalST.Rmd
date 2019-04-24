@@ -41,12 +41,12 @@ Como hemos comprobado antes en el summary que sí que hay valores perdidos (122)
 
 ```{r}
 # Elimino aquellos datos que sean NA
-datosEstacion = datosEstacion[-which(is.na(datosEstacion$Tmax)),]
+datosEstacionSinNA = datosEstacion[-which(is.na(datosEstacion$Tmax)),]
 
 # Comprobamos la nueva dimensionalidad de los datos
 # y confirmamos que ya no hay datos perdidos
-dim(datosEstacion)
-anyNA(datosEstacion)
+dim(datosEstacionSinNA)
+anyNA(datosEstacionSinNA)
 ```
 
 Hemos reducido la dimensionalidad de los datos de 1726 a 1604, pero ya no hay ningún valor perdido y podemos agrupar los datos por mes, obteniendo la temperatura máxima en cada uno.
@@ -55,12 +55,12 @@ Para obtener dichos datos máximos utilizo la librería `dplyr`.
 
 ```{r}
 # Almacenamos la variable Fecha como tipo Date
-datosEstacion$Fecha = as.Date(datosEstacion$Fecha)
+datosEstacionSinNA$Fecha = as.Date(datosEstacionSinNA$Fecha)
 
 # Convertimos el dataset en dos columnas (Fecha y Mes),
 # agrupamos por mes y año y para todos los valores nos
 # quedamos con el valor máximo de TMax
-datosTmax = datosEstacion %>%
+datosTmaxMensual = datosEstacionSinNA %>%
 mutate(Mes = format(Fecha, "%m"), Año = format(Fecha, "%Y")) %>%
 group_by(Año, Mes) %>%
 summarise(Tmax = max(Tmax))
@@ -72,7 +72,7 @@ Ahora podemos trabajar con la columna TMax como nuestra serie temporal. Podemos 
 # Observamos la tendencia y estacionalidad con el decompose
 # y utilizamos frecuencia 12 porque asumimos que tienen
 # estacionalidad anual
-serie = datosTmax$Tmax
+serie = datosTmaxMensual$Tmax
 serie.ts = ts(serie, frequency=12)
 plot(decompose(serie.ts))
 ```
@@ -263,4 +263,107 @@ Los valores finales predichos por el modelo para los meses de marzo y abril son 
 ```{r}
 valoresPredichos.EstTendExp
 ```
+
+## Problema 2
+
+Teniendo los datos de una estación meteorológica (ubicada en Loja) desde mayo de 2013 hasta febrero de 2018, de forma diaria, se pide predecir los valores de temperatura máxima por día en la primera semana de marzo de 2018.
+
+Partiendo de los datos que tenemos de la estación, solamente sabiendo la fecha y la temperatura máxima, imputamos los valores perdidos para poder tener una serie continua.
+
+```{r}
+library(imputeTS)
+
+datosEstacionImp = na.interpolation(datosEstacion)
+anyNA(datosEstacionImp)
+```
+
+Una vez imputados los datos analizamos la nueva serie de datos diarios con la función `decompose`. Esta vez, al tratar con datos diarios, la frecuencia de la estacionalidad será 365.
+
+```{r}
+serie = datosEstacionImp$Tmax
+serie.ts = ts(serie, frequency=365)
+plot(decompose(serie.ts))
+```
+
+Para suavizar los datos de la componente aleatoria y acercar su media al valor 0, vamos a realizar una transformación logarítmica a la serie.
+
+```{r}
+# Realizamos una transformación logarítmica
+# y volvemos a mostrar los valores del decompose
+serie.ts.log = log(serie.ts)
+serie.log = log(serie)
+plot(decompose(serie.ts.log))
+```
+
+Ahora los datos se aproximan al 0 y la media saldrá muy próxima a ese valor. Está más próxima a ser estacionaria.
+
+Vamos a calcular los datos a predecir y a definir la serie que usaremos como train (todos los valores). El número de predicciones será 7 (los 7 días de la primera semana de marzo).
+
+```{r}
+nPred = 7
+serie.train = serie.log
+tiempo.train = 1:length(serie.train)
+tiempo.pred = (length(tiempo.train)+1):(length(tiempo.train)+nPred)
+```
+
+El siguiente paso es estimar la tendencia de la serie.
+
+```{r}
+parametros.lm = lm(serie.train ~ tiempo.train)
+
+tendencia.train = parametros.lm$coefficients[1]+tiempo.train*parametros.lm$coefficients[2]
+tendencia.pred = parametros.lm$coefficients[1]+tiempo.pred*parametros.lm$coefficients[2]
+```
+
+En la siguiente gráfica mostramos la tendencia estimada en la misma gráfica que la serie temporal.
+
+```{r}
+plot.ts(serie.train, xlim=c(1, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.train, tendencia.train, col="blue")
+lines(tiempo.pred, tendencia.pred, col="green")
+```
+
+Vamos a utilizar el test de Jarque Bera sobre los residuos que han quedado de generar el modelo lineal, para comprobar si siguen una distribución normal.
+
+```{r}
+JB.train = jarque.bera.test(parametros.lm$residuals)
+JB.train
+```
+
+Como el test de Jarque Bera no indica que los residuos sigan una distribución normal, vamos a probar un nuevo modelo que haga transformaciones al atributo tiempo.
+
+```{r}
+parametros.lm = lm(serie.train ~ tiempo.train + I(tiempo.train^2))
+
+tendencia.train = parametros.lm$coefficients[1]+tiempo.train*parametros.lm$coefficients[2]
+tendencia.pred = parametros.lm$coefficients[1]+tiempo.pred*parametros.lm$coefficients[2]
+
+plot.ts(serie.train, xlim=c(1, tiempo.pred[length(tiempo.pred)]))
+lines(tiempo.train, tendencia.train, col="blue")
+lines(tiempo.pred, tendencia.pred, col="green")
+
+JB.train = jarque.bera.test(parametros.lm$residuals)
+JB.train
+```
+
+Como esto tampoco funciona bien, probamos a realizar una serie de diferenciaciones a la serie para intentar suavizar la tendencia.
+
+```{r}
+serieDif = diff(serie.train)
+tiempoDif = tiempo.train[2:length(tiempo.train)]
+tiempoPredDif = (tiempoDif[length(tiempoDif)]+1):(tiempoDif[length(tiempoDif)] + nPred)
+parametros.lm = lm(serieDif ~ tiempoDif)
+
+tendencia.train = parametros.lm$coefficients[1]+tiempoDif*parametros.lm$coefficients[2]
+tendencia.pred = parametros.lm$coefficients[1]+tiempoPredDif*parametros.lm$coefficients[2]
+
+plot.ts(serieDif, xlim=c(1, tiempoPredDif[length(tiempoPredDif)]))
+lines(tiempoDif, tendencia.train, col="blue")
+lines(tiempoPredDif, tendencia.pred, col="green")
+
+JB.train = jarque.bera.test(parametros.lm$residuals)
+JB.train
+```
+
+Como el test de Jarque Bera sigue negando que los residuos sigan una distribución normal no podemos asumir que el modelo estime la tendencia correctamente, y además al ser esta tendencia calculada casi constante, no voy a eliminar la tendencia para los siguientes pasos.
 
